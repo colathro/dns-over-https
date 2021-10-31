@@ -1,32 +1,58 @@
 [ApiController]
 public class DNSController : ControllerBase
 {
+    private readonly UdpClientService udpClientService;
+    public DNSController(UdpClientService _udpClientService)
+    {
+        udpClientService = _udpClientService;
+    }
+
     [HttpGet("dns-query")]
     public async Task Get()
     {
-        var dns = this.HttpContext.Request.Query["dns"];
-
-        if (!ValidInputs(dns))
+        var udpClient = udpClientService.Dequeue();
+        try
         {
-            await WriteError(Constants.Errors.MissingDNSMessage);
+            var dns = this.HttpContext.Request.Query["dns"];
+            var urlEncodedRequest = dns.First();
+            var message = WebEncoders.Base64UrlDecode(urlEncodedRequest);
+
+            await udpClient.Client.SendAsync(message, SocketFlags.None);
+
+            var res = await udpClient.ReceiveAsync();
+            this.HttpContext.Response.Headers.ContentType = Constants.AcceptedContentType;
+            await this.HttpContext.Response.Body.WriteAsync(res.Buffer);
             return;
         }
-
-        return;
+        finally
+        {
+            udpClientService.ReturnToQueue(udpClient);
+        }
     }
 
     [HttpPost("dns-query")]
     public async Task Post()
     {
-        StreamReader bodyStream = new StreamReader(this.HttpContext.Request.Body);
-        string dns = await bodyStream.ReadToEndAsync();
+        var udpClient = udpClientService.Dequeue();
 
-        if (!ValidInputs(dns))
+        try
         {
-            await WriteError(Constants.Errors.MissingDNSMessage);
+            using (var reqMs = new MemoryStream(1048))
+            {
+                await this.HttpContext.Request.Body.CopyToAsync(reqMs);
+                await udpClient.Client.SendAsync(reqMs.GetBuffer(), SocketFlags.None);
+            }
+
+            var res = await udpClient.ReceiveAsync();
+            this.HttpContext.Response.Headers.ContentType = Constants.AcceptedContentType;
+            await this.HttpContext.Response.Body.WriteAsync(res.Buffer);
+
             return;
         }
-        return;
+        finally
+        {
+            udpClientService.ReturnToQueue(udpClient);
+        }
     }
 
     private bool ValidInputs(string dnsQuery)
