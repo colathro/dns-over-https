@@ -1,15 +1,46 @@
 [ApiController]
 public class DNSController : ControllerBase
 {
-    [HttpGet("")]
-    public ActionResult Resolve(
-        [FromQuery] DNSQuery dnsQuery
-    )
+    [HttpGet("dns-query")]
+    public async Task Get()
     {
-        if (!ModelState.IsValid)
+        var dns = this.HttpContext.Request.Query["dns"];
+
+        if (!ValidInputs(dns))
         {
-            return BadRequest(ModelState);
+            await WriteError(Constants.Errors.MissingDNSMessage);
+            return;
         }
-        return Ok(200);
+
+        return;
+    }
+
+    [HttpPost("dns-query")]
+    public async Task Post()
+    {
+        StreamReader bodyStream = new StreamReader(this.HttpContext.Request.Body);
+        string dns = await bodyStream.ReadToEndAsync();
+
+        if (!ValidInputs(dns))
+        {
+            await WriteError(Constants.Errors.MissingDNSMessage);
+            return;
+        }
+        return;
+    }
+
+    private bool ValidInputs(string dnsQuery)
+    {
+        if (string.IsNullOrWhiteSpace(dnsQuery))
+        {
+            return false;
+        }
+        return true;
+    }
+
+    private async Task WriteError(string error)
+    {
+        this.HttpContext.Response.StatusCode = 400;
+        await this.HttpContext.Response.WriteAsync(error);
     }
 }
